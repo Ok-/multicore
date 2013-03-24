@@ -12,13 +12,17 @@
 #include <string>
 #include <stdexcept>
 #include <mpi.h>
+#include <array>
 
 #include "interval.h"
 #include "functions.h"
 #include "minimizer.h"
 
-using namespace std;
 
+#define NB_MINS 2
+
+
+using namespace std;
 
 // Split a 2D box into four subboxes by splitting each dimension
 // into two equal subparts
@@ -73,10 +77,36 @@ void minimize(itvfun f,	// Function to minimize
 	split_box(x,y,xl,xr,yl,yr);
 
 	// If conditions have been met, it splits the work 
+	int i = 0;
+	double index = -1.0;
 	if (first_time && (rank == 0))	{
-		// TODO SEND INFO TO RANK 1
-		minimize(f, xl, yl, threshold, min_ub, ml, rank, false);
-		minimize(f, xl, yr, threshold, min_ub, ml, rank, false);
+		for (auto x : functions) {
+			if (x.second.f == f) {
+				index = (double)i;
+			} else {
+				i++;
+			}
+		}
+		// Fill an array of doubles to send it
+		int size = 4*NB_MINS + 3;
+		double to_send[50] = {
+			index,
+			xl.left(),
+			xl.right(),
+			yl.left(),
+			yl.right(),
+			xl.left(),
+			xl.right(),
+			yr.left(),
+			yr.right(),
+			threshold,
+			min_ub
+		};
+		
+		// Send work to rank 1
+		MPI_Send(to_send, size, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+	
+		// Half of the work for rank 0
 		minimize(f, xr, yl, threshold, min_ub, ml, rank, false);
 		minimize(f, xr, yr, threshold, min_ub, ml, rank, false);
 	} else {
@@ -134,17 +164,78 @@ int main(int argc, char** argv)
 		cout << "Precision? ";
 		cin >> precision;
 		
-		minimize(fun.f,fun.x,fun.y,precision,min_ub,minimums, rank, true);
+		set<double> mins;
+		
+		// Find its own local minimum
+		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, true);
+		mins.insert(min_ub);
+		
+		// Receive later other local minimums
+		double other_min[NB_MINS];
+		MPI_Status status;
+		MPI_Request req;
+		MPI_Irecv(&other_min, NB_MINS, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &req);
+
+		// Wait for other processors
+		MPI_Barrier(MPI_COMM_WORLD);
+		
+		// Wait for response and add it to the minimums set
+		MPI_Wait(&req, &status);
+		for (int i = 0; i < NB_MINS; i++) {
+			mins.insert(other_min[i]);
+		}
+		
+		// Save the lowest min
+		double lowest_min = *(mins.begin());
+		
+		// Displaying all potential minimizers
+		copy(minimums.begin(),minimums.end(),
+				 ostream_iterator<minimizer>(cout,"\n"));
+		cout << "Number of minimizers: " << minimums.size() << endl;
+		cout << "Upper bound for minimum: " << lowest_min << endl;
+		
 	} else {
-		cout << "nothing to do" << endl;
-		// MPI_Recv(&msg)
+		// Receiving data to process
+		int size = 4*NB_MINS + 3;
+		double data[size];
+		double mins[NB_MINS];
+		MPI_Status status;
+		MPI_Recv(data, size, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &status);
+		
+		// Find which function is involved
+		int i = 0;
+		int index = (int)data[0];
+		for(auto x : functions) {
+			if (i == index) {
+				fun.f = x.second.f;
+			} else {
+				i++;
+			}
+		}
+		
+		// Rebuild global data
+		precision = data[NB_MINS*4+1];
+		min_ub = data[NB_MINS*4+2];
+		
+		// Build local data
+		for(i = 0; i < NB_MINS; i++) {
+			int var = 4*i;
+			fun.x = interval(data[var+1],data[var+2]);
+			fun.y = interval(data[var+3],data[var+4]);
+			
+			// Find minimum
+			minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, false);
+			mins[i] = min_ub;
+		}
+
+		// Wait for other processors
+		MPI_Barrier(MPI_COMM_WORLD);
+		
+		// Send local minimum found to rank 0
+		MPI_Send(&mins, NB_MINS, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 	}
 	
-	// Displaying all potential minimizers
-	copy(minimums.begin(),minimums.end(),
-			 ostream_iterator<minimizer>(cout,"\n"));
-	cout << "Number of minimizers: " << minimums.size() << endl;
-	cout << "Upper bound for minimum: " << min_ub << endl;
+	cout << "Rank " << rank << ", Upper bound for minimum: " << min_ub << endl;
 	
 	MPI_Finalize();
 }

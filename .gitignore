@@ -11,3 +11,7 @@
 *.lai
 *.la
 *.a
+
+# Programs
+src/optimization-mpi
+src/optimization-seq
