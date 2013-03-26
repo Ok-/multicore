@@ -8,11 +8,14 @@
 */
 
 #include <iostream>
+#include <sstream>
 #include <iterator>
+#include <utility>
 #include <string>
 #include <stdexcept>
-#include <mpi.h>
 #include <array>
+#include <mpi.h>
+#include <unistd.h>
 
 #include "interval.h"
 #include "functions.h"
@@ -23,6 +26,18 @@
 
 
 using namespace std;
+
+
+int number_idle_processors;
+int next_idle_processor_to_call;
+
+// Allow to print message with rank of the processor for debug purpose
+void echo(const int rank, const string &message) {
+	stringstream s;
+	s << "Rang " << rank << " : " << message;
+	cout << s.str() << endl;
+}
+
 
 // Split a 2D box into four subboxes by splitting each dimension
 // into two equal subparts
@@ -75,11 +90,19 @@ void minimize(itvfun f,	// Function to minimize
 	// and recursively explore them
 	interval xl, xr, yl, yr;
 	split_box(x,y,xl,xr,yl,yr);
+	
+	pair<interval, interval> p[4];
+	p[0] = make_pair(xl,yl);
+	p[1] = make_pair(xl,yr);
+	p[2] = make_pair(xr,yl);
+	p[3] = make_pair(xr,yr);
+
+	stringstream s;
 
 	// If conditions have been met, it splits the work 
-	int i = 0;
-	double index = -1.0;
 	if (first_time && (rank == 0))	{
+		int i = 0;
+		double index = -1.0;
 		for (auto x : functions) {
 			if (x.second.f == f) {
 				index = (double)i;
@@ -87,28 +110,103 @@ void minimize(itvfun f,	// Function to minimize
 				i++;
 			}
 		}
-		// Fill an array of doubles to send it
-		int size = 4*NB_MINS + 3;
-		double to_send[50] = {
-			index,
-			xl.left(),
-			xl.right(),
-			yl.left(),
-			yl.right(),
-			xl.left(),
-			xl.right(),
-			yr.left(),
-			yr.right(),
-			threshold,
-			min_ub
-		};
 		
-		// Send work to rank 1
-		MPI_Send(to_send, size, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+		// If there are idle processors, share with them 
+		while (number_idle_processors != 0) {
+			int number_tasks[4] = {0};
+			
+			// Number of processors ready to compute data
+			int max_proc = 4;
+			int working_proc = (number_idle_processors % max_proc) + 1;
+			int k = 0;
+			
+			// Allocate work for N processors
+			for (int i = 0; i < max_proc; i++) {
+				number_tasks[i] = max_proc / working_proc;
+				max_proc = max_proc - number_tasks[i];
+				working_proc--;
+				
+				// For each task of a processor, share data
+				for (int nb_task = 0; nb_task < number_tasks[i]; nb_task++) {
+					if (i == 0) {
+						// Rank 0 work
+						minimize(f, p[k].first, p[k].second, threshold, min_ub, ml, rank, false);
+						k++;
+						minimize(f, p[k].first, p[k].second, threshold, min_ub, ml, rank, false);
+						
+					} else {
+						// For other ranks
+						double to_send[7] = {
+							index,
+							p[k].first.left(),
+							p[k].first.right(),
+							p[k].second.left(),
+							p[k].second.right(),
+							threshold,
+							min_ub
+						};
+						
+						if(nb_task == 0) {
+							// Send work to next rank
+							MPI_Send(&number_tasks[i], 1, MPI_INT, next_idle_processor_to_call, 0, MPI_COMM_WORLD);
+							s.str("");
+							s << "Envoi du message '" << number_tasks[i] << "' NUMTASKS à " << next_idle_processor_to_call;
+							echo(rank, s.str());
+													
+							// Wait for other processors
+							MPI_Barrier(MPI_COMM_WORLD);
+						}
+
+						// Send work to next rank
+						MPI_Send(&to_send, 7, MPI_DOUBLE, next_idle_processor_to_call, 0, MPI_COMM_WORLD);
+						s.str("");
+						s << "Envoi des données à " << next_idle_processor_to_call << ": ";
+						for(int l = 0; l < 7; l++) {
+							s << to_send[l] << " ";
+						}
+						echo(rank, s.str());
+					}
+					k++;
+				}
+				next_idle_processor_to_call++;
+				s.str("");
+				s << "NB next idle proc to call : " << next_idle_processor_to_call << ", Nb idle proc : " << number_idle_processors;
+				echo(rank, s.str());
+				sleep(1);
+			}
+			echo(rank, "endloop");
+			
+			number_idle_processors = number_idle_processors - working_proc;
+			s.str("");
+			s << "NB next idle proc to call : " << next_idle_processor_to_call << ", Nb idle proc : " << number_idle_processors;
+			echo(rank, s.str());
+			/*
+			// Fill an array of doubles to send it
+			int size = 4 * NB_MINS + 3;
+			double to_send[50] = {
+				index,
+				xl.left(),
+				xl.right(),
+				yl.left(),
+				yl.right(),
+				xl.left(),
+				xl.right(),
+				yr.left(),
+				yr.right(),
+				threshold,
+				min_ub
+			};
+			
+			// Send work to rank 1
+			MPI_Send(to_send, size, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+			
+			// Half of the work for rank 0
+			minimize(f, xr, yl, threshold, min_ub, ml, rank, false);
+			minimize(f, xr, yr, threshold, min_ub, ml, rank, false);
+			*/
 	
-		// Half of the work for rank 0
-		minimize(f, xr, yl, threshold, min_ub, ml, rank, false);
-		minimize(f, xr, yr, threshold, min_ub, ml, rank, false);
+
+		}
 	} else {
 		minimize(f, xl, yl, threshold, min_ub, ml, rank, false);
 		minimize(f, xl, yr, threshold ,min_ub, ml, rank, false);
@@ -130,6 +228,9 @@ int main(int argc, char** argv)
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Get_processor_name(processor_name, &namelen);
 
+	number_idle_processors = numprocs - 1;
+	next_idle_processor_to_call = 1;
+
 	// Variables declarations
 	cout.precision(16);
 	double min_ub = numeric_limits<double>::infinity();
@@ -139,6 +240,8 @@ int main(int argc, char** argv)
 	string choice_fun;
 	opt_fun_t fun;
 	bool good_choice;
+	
+	stringstream s;
 	
 	// Split work for processors
 	if (rank == 0) {
@@ -170,6 +273,7 @@ int main(int argc, char** argv)
 		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, true);
 		mins.insert(min_ub);
 		
+		/*
 		// Receive later other local minimums
 		double other_min[NB_MINS];
 		MPI_Status status;
@@ -193,15 +297,42 @@ int main(int argc, char** argv)
 				 ostream_iterator<minimizer>(cout,"\n"));
 		cout << "Number of minimizers: " << minimums.size() << endl;
 		cout << "Upper bound for minimum: " << lowest_min << endl;
+		*/
 		
 	} else {
 		// Receiving data to process
-		int size = 4*NB_MINS + 3;
-		double data[size];
-		double mins[NB_MINS];
+		double data[4][10] = {{0.0}};
+		//double mins[10];
+		MPI_Request requests[4];
 		MPI_Status status;
-		MPI_Recv(data, size, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &status);
 		
+		int number_tasks = 0;
+		MPI_Recv(&number_tasks, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+		s.str("");
+		s << "Réception de " << number_tasks << " blocs";
+		echo(rank, s.str());
+		
+		// Wait for other processors
+		MPI_Barrier(MPI_COMM_WORLD);
+		
+		for (int i = 0; i < number_tasks; i++) {
+			MPI_Irecv(&data[i], 7, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &requests[i]);
+
+		}
+		
+		string m("TODO");
+		echo(rank, m);
+		
+		for (int i = 0; i < number_tasks; i++) {
+			MPI_Wait(&requests[i], &status);
+			s.str("");
+			for (int j = 0; j < 7; j++) {
+				s << data[i][j] << " ";
+			}
+			echo(rank, s.str());
+		}
+		
+		/*
 		// Find which function is involved
 		int i = 0;
 		int index = (int)data[0];
@@ -233,9 +364,11 @@ int main(int argc, char** argv)
 		
 		// Send local minimum found to rank 0
 		MPI_Send(&mins, NB_MINS, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+		*/
 	}
 	
-	cout << "Rank " << rank << ", Upper bound for minimum: " << min_ub << endl;
+	s << "Upper bound for minimum: " << min_ub << endl;
+	echo(rank, s.str());
 	
 	MPI_Finalize();
 }
