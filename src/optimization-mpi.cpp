@@ -100,7 +100,7 @@ void minimize(itvfun f,	// Function to minimize
 	stringstream s;
 
 	// If conditions have been met, it splits the work 
-	if (first_time && (rank == 0))	{
+	if (rank == 0) {
 		int i = 0;
 		double index = -1.0;
 		for (auto x : functions) {
@@ -118,7 +118,8 @@ void minimize(itvfun f,	// Function to minimize
 			// Number of processors ready to compute data
 			int max_proc = 4;
 			int working_proc = (number_idle_processors % max_proc) + 1;
-			int k = 0;
+			int working_proc_copy = working_proc;
+			int current_task = 0;
 			
 			// Allocate work for N processors
 			for (int i = 0; i < max_proc; i++) {
@@ -128,30 +129,28 @@ void minimize(itvfun f,	// Function to minimize
 				
 				// For each task of a processor, share data
 				for (int nb_task = 0; nb_task < number_tasks[i]; nb_task++) {
-					if (i == 0) {
+					
+					if (i == working_proc - 1) {
 						// Rank 0 work
-						minimize(f, p[k].first, p[k].second, threshold, min_ub, ml, rank, false);
-						k++;
-						minimize(f, p[k].first, p[k].second, threshold, min_ub, ml, rank, false);
-						
+						minimize(f, p[current_task].first, p[current_task].second, threshold, min_ub, ml, rank, false);
 					} else {
 						// For other ranks
 						double to_send[7] = {
 							index,
-							p[k].first.left(),
-							p[k].first.right(),
-							p[k].second.left(),
-							p[k].second.right(),
+							p[current_task].first.left(),
+							p[current_task].first.right(),
+							p[current_task].second.left(),
+							p[current_task].second.right(),
 							threshold,
 							min_ub
 						};
 						
 						if(nb_task == 0) {
 							// Send work to next rank
-							MPI_Send(&number_tasks[i], 1, MPI_INT, next_idle_processor_to_call, 0, MPI_COMM_WORLD);
 							s.str("");
 							s << "Envoi du message '" << number_tasks[i] << "' NUMTASKS à " << next_idle_processor_to_call;
 							echo(rank, s.str());
+							MPI_Send(&number_tasks[i], 1, MPI_INT, next_idle_processor_to_call, 0, MPI_COMM_WORLD);
 													
 							// Wait for other processors
 							MPI_Barrier(MPI_COMM_WORLD);
@@ -166,17 +165,20 @@ void minimize(itvfun f,	// Function to minimize
 						}
 						echo(rank, s.str());
 					}
-					k++;
+					current_task++;
 				}
-				next_idle_processor_to_call++;
-				s.str("");
-				s << "NB next idle proc to call : " << next_idle_processor_to_call << ", Nb idle proc : " << number_idle_processors;
-				echo(rank, s.str());
-				sleep(1);
+
 			}
-			echo(rank, "endloop");
 			
-			number_idle_processors = number_idle_processors - working_proc;
+			/*
+			next_idle_processor_to_call++;
+			s.str("");
+			s << "NB next idle proc to call : " << next_idle_processor_to_call << ", Nb idle proc : " << number_idle_processors;
+			echo(rank, s.str());
+			sleep(1);
+			*/
+			
+			number_idle_processors = number_idle_processors - working_proc_copy + 1;
 			s.str("");
 			s << "NB next idle proc to call : " << next_idle_processor_to_call << ", Nb idle proc : " << number_idle_processors;
 			echo(rank, s.str());
@@ -207,6 +209,10 @@ void minimize(itvfun f,	// Function to minimize
 	
 
 		}
+		minimize(f, xl, yl, threshold, min_ub, ml, rank, false);
+		minimize(f, xl, yr, threshold ,min_ub, ml, rank, false);
+		minimize(f, xr, yl, threshold, min_ub, ml, rank, false);
+		minimize(f, xr, yr, threshold, min_ub, ml, rank, false);
 	} else {
 		minimize(f, xl, yl, threshold, min_ub, ml, rank, false);
 		minimize(f, xl, yr, threshold ,min_ub, ml, rank, false);
@@ -320,9 +326,6 @@ int main(int argc, char** argv)
 
 		}
 		
-		string m("TODO");
-		echo(rank, m);
-		
 		for (int i = 0; i < number_tasks; i++) {
 			MPI_Wait(&requests[i], &status);
 			s.str("");
@@ -367,7 +370,8 @@ int main(int argc, char** argv)
 		*/
 	}
 	
-	s << "Upper bound for minimum: " << min_ub << endl;
+	s.str("");
+	s << "Upper bound for minimum: " << min_ub;
 	echo(rank, s.str());
 	
 	MPI_Finalize();
