@@ -16,7 +16,7 @@ COMMON_SOURCES = interval.cpp minimizer.cpp functions.cpp
 COMMON_OBJECTS = $(COMMON_SOURCES:.cpp=.o)
 
 #CXXFLAGS = -std=gnu++0x -Wall -I/comptes/goualard-f/local/include
-CXXFLAGS = -std=gnu++0x -Wall
+CXXFLAGS = -std=gnu++0x -Wall -fopenmp
 
 #MPICXX = $(BINROOT)/mpic++
 MPICXX = mpic++

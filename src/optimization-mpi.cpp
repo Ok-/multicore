@@ -16,6 +16,7 @@
 #include <array>
 #include <mpi.h>
 #include <unistd.h>
+#include <omp.h>
 
 #include "interval.h"
 #include "functions.h"
@@ -26,19 +27,6 @@
 
 
 using namespace std;
-
-bool idle_processors[50] = {false};
-
-// TODO :
-int find_idle_processors() {
-	int idle_proc = -1;
-	for (int i = 1; i < 50; i++) {
-		if (idle_processors[i]) {
-			idle_proc = i;
-		}
-	}
-	return idle_proc;
-}
 
 // Allow to print message with rank of the processor for debug purpose
 void echo(const int rank, const string &message) {
