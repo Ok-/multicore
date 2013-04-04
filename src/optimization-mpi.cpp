@@ -110,8 +110,6 @@ void minimize(itvfun f,	// Function to minimize
 
 	// If conditions have been met, it splits the work 
 	if ((rank == 0) && first_time) {
-		MPI_Status status;
-		MPI_Request req;
 		int i = 0;
 		double index = -1.0;
 		for (auto x : functions) {
@@ -123,7 +121,7 @@ void minimize(itvfun f,	// Function to minimize
 		}
 	
 		// Allocate work for N processors
-		for (int current_task = 1; current_task < 2; i++) {
+		for (int current_task = 1; current_task < 4; current_task++) {
 			// Send data to idle process
 			double to_send[7] = {
 				index,
@@ -136,7 +134,7 @@ void minimize(itvfun f,	// Function to minimize
 			};
 			
 			// Send work to next rank
-			MPI_Isend(&to_send, 7, MPI_DOUBLE, current_task, 0, MPI_COMM_WORLD, &req);
+			MPI_Send(&to_send, 7, MPI_DOUBLE, current_task, 0, MPI_COMM_WORLD);
 			s.str("");
 			s << "Envoi des données à " << current_task << ": ";
 			for(int l = 0; l < 7; l++) {
@@ -144,20 +142,14 @@ void minimize(itvfun f,	// Function to minimize
 			}
 			echo(rank, s.str());
 		}
-		echo(rank, "test");
-		
-		MPI_Wait(&req, &status);
 		
 		// Rank 0 works on the last box to split it again
 		minimize(f, p[0].first, p[0].second, threshold, min_ub, ml, rank, false);
-		minimize(f, p[2].first, p[2].second, threshold, min_ub, ml, rank, false);
-		minimize(f, p[3].first, p[3].second, threshold, min_ub, ml, rank, false);
 		
 	} else {
 		for (int i = 0; i < 4; i++) {
 			minimize(f, p[i].first, p[i].second, threshold, min_ub, ml, rank, false);
 		}
-		echo(rank, "MESSAGE");
 	}
 }
 
@@ -186,9 +178,6 @@ int main(int argc, char** argv)
 	
 	stringstream s;
 	
-	s.str("");
-	echo(rank, "");	
-	
 	// Split work for processors
 	if (rank == 0) {
 		do {
@@ -215,10 +204,28 @@ int main(int argc, char** argv)
 		
 		set<double> mins;
 		
+		double minimum_received[3] = {0.0};
+		MPI_Request reqs[3];
+		MPI_Status status[3];
+		
+		for(int i = 1; i < 4; i++) {
+			MPI_Irecv(&minimum_received[i-1], 7, MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &reqs[i-1]);
+		}
+		
 		// Find its own local minimum
 		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, true);
 		mins.insert(min_ub);
 		
+		for(int i = 0; i < 3; i++) {
+			MPI_Wait(&reqs[i], &status[i]);
+			mins.insert(minimum_received[i]);
+		}
+		
+		s.str("");
+		s << min_ub;
+		echo(rank, s.str());
+		
+		min_ub = *(mins.begin());
 	} else {
 		// Receiving data to process
 		double data[7] = {0.0};
@@ -249,18 +256,18 @@ int main(int argc, char** argv)
 		precision = data[5];
 		min_ub = data[6];
 		
-		echo(rank, "TRAITEMENT");
 		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, false);
 		
 		s.str("");
 		s << min_ub;
 		echo(rank, s.str());
+		
+		MPI_Send(&min_ub, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 	}
 	
 	s.str("");
-	echo(rank, "END");
-	//s << "Upper bound for minimum: " << min_ub;
-	//echo(rank, s.str());
+	s << "Upper bound for minimum: " << min_ub;
+	echo(rank, s.str());
 	
 	MPI_Finalize();
 }
