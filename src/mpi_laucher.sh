@@ -4,6 +4,6 @@
 
 host_name="$(hostname)"
 #MPIRUN="$BINROOT/mpirun -H $host_name,$host_name -n 2 optimization-mpi"
-MPIRUN="mpirun -H $host_name,$host_name -n 2 optimization-mpi"
+MPIRUN="mpirun -H $host_name -n 4 optimization-mpi"
 
 $($MPIRUN)

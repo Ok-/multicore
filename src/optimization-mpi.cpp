@@ -109,32 +109,36 @@ void minimize(itvfun f,	// Function to minimize
 		}
 	
 		// Allocate work for N processors
-		for (int current_task = 1; current_task < 4; current_task++) {
-			// Send data to idle process
-			double to_send[7] = {
-				index,
-				p[current_task].first.left(),
-				p[current_task].first.right(),
-				p[current_task].second.left(),
-				p[current_task].second.right(),
-				threshold,
-				min_ub
-			};
+		//#pragma omp parallel for
+		for (int current_task = 0; current_task < 4; current_task++) {
+			if (current_task == 0) {
+				// Rank 0 works on the last box to split it again
+				minimize(f, p[0].first, p[0].second, threshold, min_ub, ml, rank, false);
+			} else {
+				// Send data to idle process
+				double to_send[7] = {
+					index,
+					p[current_task].first.left(),
+					p[current_task].first.right(),
+					p[current_task].second.left(),
+					p[current_task].second.right(),
+					threshold,
+					min_ub
+				};
 			
-			// Send work to next rank
-			MPI_Send(&to_send, 7, MPI_DOUBLE, current_task, 0, MPI_COMM_WORLD);
-			s.str("");
-			s << "Envoi des données à " << current_task << ": ";
-			for(int l = 0; l < 7; l++) {
-				s << to_send[l] << " ";
+				// Send work to next rank
+				MPI_Send(&to_send, 7, MPI_DOUBLE, current_task, 0, MPI_COMM_WORLD);
+				s.str("");
+				s << "Envoi des données à " << current_task << ": ";
+				for(int l = 0; l < 7; l++) {
+					s << to_send[l] << " ";
+				}
+				echo(rank, s.str());
 			}
-			echo(rank, s.str());
+
 		}
-		
-		// Rank 0 works on the last box to split it again
-		minimize(f, p[0].first, p[0].second, threshold, min_ub, ml, rank, false);
-		
 	} else {
+		//#pragma omp parallel for
 		for (int i = 0; i < 4; i++) {
 			minimize(f, p[i].first, p[i].second, threshold, min_ub, ml, rank, false);
 		}
@@ -148,11 +152,16 @@ int main(int argc, char** argv)
 	int numprocs, rank, namelen;
 	char processor_name[MPI_MAX_PROCESSOR_NAME];
 	
+	// MPI Initialization
 	MPI_Init(&argc, &argv);
 	
 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Get_processor_name(processor_name, &namelen);
+
+
+	// OMP Initialization
+	omp_set_num_threads(4);
 
 	// Variables declarations
 	cout.precision(16);
@@ -212,6 +221,11 @@ int main(int argc, char** argv)
 		s.str("");
 		s << min_ub;
 		echo(rank, s.str());
+		
+	  	/*
+	  	for (set<double>::iterator it=mins.begin(); it!=mins.end(); ++it)
+    		cout << ' ' << *it;
+		*/
 		
 		min_ub = *(mins.begin());
 	} else {

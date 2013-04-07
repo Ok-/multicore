@@ -1,0 +1,11 @@
+\select@language {french}
+\setlength {\baselineskip }{1.5em} \setlength {\parskip }{0pt} 
+\contentsline {chapter}{\numberline {1}MPI}{3}{chapter.1}
+\contentsline {section}{\numberline {1.1}Mise en place}{3}{section.1.1}
+\contentsline {subsection}{\numberline {1.1.1}Le travail de la machine \FB@og Ma\IeC {\^\i }tre \FB@fg }{3}{subsection.1.1.1}
+\contentsline {subsection}{\numberline {1.1.2}Le travail des machines \FB@og Esclaves \FB@fg }{4}{subsection.1.1.2}
+\contentsline {section}{\numberline {1.2}Probl\IeC {\'e}matique : le partage du minimum}{4}{section.1.2}
+\contentsline {section}{\numberline {1.3}G\IeC {\'e}n\IeC {\'e}ralisation \IeC {\`a} n machines}{5}{section.1.3}
+\contentsline {chapter}{\numberline {2}Open MP}{6}{chapter.2}
+\contentsline {section}{\numberline {2.1}Pourquoi OpenMP ?}{6}{section.2.1}
+\contentsline {section}{\numberline {2.2}Utilisation d'OpenMP}{6}{section.2.2}
