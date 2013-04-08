@@ -70,8 +70,11 @@ void minimize(itvfun f,	// Function to minimize
 		min_ub = fxy.right();
 		// Discarding all saved boxes whose minimum lower bound is 
 		// greater than the new minimum upper bound
-		auto discard_begin = ml.lower_bound(minimizer{0,0,min_ub,0});
-		ml.erase(discard_begin,ml.end());
+		#pragma omp critical
+		{
+			auto discard_begin = ml.lower_bound(minimizer{0,0,min_ub,0});
+			ml.erase(discard_begin,ml.end());
+		}
 	}
 
 	// Checking whether the input box is small enough to stop searching.
@@ -79,6 +82,7 @@ void minimize(itvfun f,	// Function to minimize
 	// is always split equally along both dimensions
 	if (x.width() <= threshold) { 
 		// We have potentially a new minimizer
+		#pragma omp critical
 		ml.insert(minimizer{x,y,fxy.left(),fxy.right()});
 		return ;
 	}
@@ -109,7 +113,7 @@ void minimize(itvfun f,	// Function to minimize
 		}
 	
 		// Allocate work for N processors
-		//#pragma omp parallel for
+		#pragma omp parallel for
 		for (int current_task = 0; current_task < 4; current_task++) {
 			if (current_task == 0) {
 				// Rank 0 works on the last box to split it again
@@ -138,9 +142,15 @@ void minimize(itvfun f,	// Function to minimize
 
 		}
 	} else {
-		//#pragma omp parallel for
-		for (int i = 0; i < 4; i++) {
-			minimize(f, p[i].first, p[i].second, threshold, min_ub, ml, rank, false);
+		if(first_time) {
+			#pragma omp parallel for
+			for (int i = 0; i < 4; i++) {
+				minimize(f, p[i].first, p[i].second, threshold, min_ub, ml, rank, false);
+			}
+		} else {
+			for (int i = 0; i < 4; i++) {
+				minimize(f, p[i].first, p[i].second, threshold, min_ub, ml, rank, false);
+			}
 		}
 	}
 }
@@ -258,7 +268,7 @@ int main(int argc, char** argv)
 		precision = data[5];
 		min_ub = data[6];
 		
-		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, false);
+		minimize(fun.f, fun.x, fun.y, precision, min_ub, minimums, rank, true);
 		
 		s.str("");
 		s << min_ub;
