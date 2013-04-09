@@ -7,3 +7,5 @@
 \BOOKMARK [0][-]{chapter.2}{Open MP}{}% 7
 \BOOKMARK [1][-]{section.2.1}{Pourquoi OpenMP ?}{chapter.2}% 8
 \BOOKMARK [1][-]{section.2.2}{Utilisation d'OpenMP}{chapter.2}% 9
+\BOOKMARK [2][-]{subsection.2.2.1}{Pour le rang 0}{section.2.2}% 10
+\BOOKMARK [2][-]{subsection.2.2.2}{Pour les autres rangs}{section.2.2}% 11

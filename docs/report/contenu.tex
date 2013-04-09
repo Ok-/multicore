@@ -66,9 +66,19 @@
 		\end{itemize}
 	
 	\section{Utilisation d'OpenMP}
+			Toute la difficulté de cette exercice est de choisir les parties du programmes qui gagneraient à être parallélisée. Dans notre cas, nous avons repéré plusieurs fonctions qui mériteraient à faire l'objet de traitements séparés dans plusieurs threads. Dans la suite, nous allons présenter les modifications que nous avons opérés en fonction de l'attribution des rangs. 
+		\subsection{Pour le rang 0}
+			La séparations des travaux en threads va se faire à deux endroits pour la machine principale. \\
+			
+			Premièrement, au niveau de la distribution du travail. En effet, après le découpage des quatre intervalles, on utilise une instruction \og \#pragma omp parallel for \fg afin de transmettre le travail plus efficacement. Ainsi, trois threads s'occupent de l'envoi aux machines distantes grâce à des fonctions MPI\_Send, et non la fonction MPI\_Scatter qui aurait empêché la parallelisation. Le quatrième commence à travailler localement sur le dernier intervalle.\\
+			
+			Pour l'intervalle qui est traité localement, un deuxième découpage est effectué et distribué à nouveau à quatre threads qui vont effectuer un quart des traitements. Cela permet en théorie de diviser par quatre le temps de calcul, même si en réalité avec le temps de création et traitement des threads ce taux doit être revu à la baisse. 
+			
+		\subsection{Pour les autres rangs}
 
+			Les machines de rang 1 ou supérieur utilisent le même procédé que pour le traitement en local du rang 0 : le découpage est effectué pour donner 4 intervalles qui vont être spérarés dans 4 threads différents afin de paralléliseer les calculs.
 
 \chapter*{Conclusion}
-	Dans un monde où l'amélioration des performances des programmes passera par la parallélisation des tâches pour profiter des architectures des machines, ce projet correspond tout à fait à une problématique d'actualité puisque peu de programmes sont réellement adaptés et conçus pour cela. Nous avons donc pu mettre en pratique les connaissances acquises durant les cours magistraux et les travaux pratiques à propos de la répartition de tâches entre des machines sur un réseau local ainsi que la division TODO
+	Dans un monde où l'amélioration des performances des programmes passera par la parallélisation des tâches pour profiter des architectures des machines, ce projet correspond tout à fait à une problématique d'actualité puisque peu de programmes sont réellement adaptés et conçus pour cela. Nous avons donc pu mettre en pratique les connaissances acquises durant les cours magistraux et les travaux pratiques à propos de la répartition de tâches entre des machines sur un réseau local ainsi que la division via OpenMP en threads des calculs parallélisables.
 
 	Parmi les évolutions envisageables possibles, il aurait été possible de transmettre avec les fonctionnalités de MPI, et sous certaines conditions, les minimums locaux de chaque machine pour obtenir un résultat plus précis. Au niveau d'une machine, il est sans doute possible d'optimiser plus efficacement le code pour augmenter la part parallélisable du programme et ainsi réduire au maximum la partie séquentielle qui ralentit le traitement.
